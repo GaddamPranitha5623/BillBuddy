@@ -62,10 +62,10 @@ const Sidebar = ({ activeItem }) => {
             <button
               key={item.name}
               onClick={() => {
-                if (['/dashboard', '/bills', '/add-bill'].includes(item.path)) {
+                if (['/dashboard', '/bills', '/add-bill', '/payments', '/reports', '/profile'].includes(item.path)) {
                   navigate(item.path);
                 } else {
-                  alert(`${item.name} module will be available in the next feature update!`);
+                    alert(`${item.name} module will be available in the next feature update!`);
                 }
               }}
               style={{

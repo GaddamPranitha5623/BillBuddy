@@ -1,21 +1,27 @@
-import sqlite3
-import pymysql
-import pymysql.cursors
 import os
+import sqlite3
 import logging
 from datetime import datetime, timedelta
+
+import pymysql
+import pymysql.cursors
+
 from config import Config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class Database:
     def __init__(self):
         self.use_sqlite = False
-        self.sqlite_file = os.path.join(os.path.dirname(__file__), 'billbuddy.db')
+        self.sqlite_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "billbuddy.db"
+        )
 
     def get_connection(self):
-        """Attempts MySQL connection; falls back to SQLite local database if unavailable."""
+        """Connect to MySQL; use SQLite if MySQL is unavailable."""
         if not self.use_sqlite:
             try:
                 connection = pymysql.connect(
@@ -26,8 +32,12 @@ class Database:
                     cursorclass=pymysql.cursors.DictCursor,
                     autocommit=True
                 )
+
                 with connection.cursor() as cursor:
-                    cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{Config.DB_NAME}`")
+                    cursor.execute(
+                        f"CREATE DATABASE IF NOT EXISTS `{Config.DB_NAME}`"
+                    )
+
                 connection.close()
 
                 connection = pymysql.connect(
@@ -39,20 +49,28 @@ class Database:
                     cursorclass=pymysql.cursors.DictCursor,
                     autocommit=True
                 )
-                return connection, 'mysql'
-            except Exception as e:
-                logger.warning(f"MySQL connection failed ({e}). Falling back to SQLite local database.")
+
+                return connection, "mysql"
+
+            except Exception as error:
+                logger.warning(
+                    "MySQL connection failed (%s). "
+                    "Falling back to SQLite.",
+                    error
+                )
                 self.use_sqlite = True
 
         conn = sqlite3.connect(self.sqlite_file)
         conn.row_factory = sqlite3.Row
-        return conn, 'sqlite'
+
+        return conn, "sqlite"
 
     def init_db(self):
-        """Initializes users, bills, and payments tables and handles column migrations."""
+        """Create tables and safely migrate existing database columns."""
         conn, db_type = self.get_connection()
+
         try:
-            if db_type == 'mysql':
+            if db_type == "mysql":
                 with conn.cursor() as cursor:
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS users (
@@ -61,8 +79,9 @@ class Database:
                             email VARCHAR(150) NOT NULL UNIQUE,
                             password VARCHAR(255) NOT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """)
+
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS bills (
                             bill_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -75,19 +94,43 @@ class Database:
                             description TEXT,
                             status VARCHAR(20) DEFAULT 'Pending',
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                            FOREIGN KEY (user_id)
+                                REFERENCES users(user_id)
+                                ON DELETE CASCADE
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """)
-                    # Check for legacy title column
-                    cursor.execute("SHOW COLUMNS FROM bills LIKE 'title'")
+
+                    # Support an older bills table using the title column.
+                    cursor.execute(
+                        "SHOW COLUMNS FROM bills LIKE 'title'"
+                    )
+
                     if cursor.fetchone():
-                        cursor.execute("ALTER TABLE bills CHANGE title bill_name VARCHAR(150) NOT NULL")
-                    cursor.execute("SHOW COLUMNS FROM bills LIKE 'frequency'")
+                        cursor.execute("""
+                            ALTER TABLE bills
+                            CHANGE title bill_name VARCHAR(150) NOT NULL
+                        """)
+
+                    cursor.execute(
+                        "SHOW COLUMNS FROM bills LIKE 'frequency'"
+                    )
+
                     if not cursor.fetchone():
-                        cursor.execute("ALTER TABLE bills ADD COLUMN frequency VARCHAR(30) DEFAULT 'Monthly'")
-                    cursor.execute("SHOW COLUMNS FROM bills LIKE 'description'")
+                        cursor.execute("""
+                            ALTER TABLE bills
+                            ADD COLUMN frequency VARCHAR(30)
+                            DEFAULT 'Monthly'
+                        """)
+
+                    cursor.execute(
+                        "SHOW COLUMNS FROM bills LIKE 'description'"
+                    )
+
                     if not cursor.fetchone():
-                        cursor.execute("ALTER TABLE bills ADD COLUMN description TEXT")
+                        cursor.execute("""
+                            ALTER TABLE bills
+                            ADD COLUMN description TEXT
+                        """)
 
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS payments (
@@ -95,17 +138,22 @@ class Database:
                             user_id INT NOT NULL,
                             bill_id INT NOT NULL,
                             amount DECIMAL(10,2) NOT NULL,
-                            payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            payment_date TIMESTAMP
+                                DEFAULT CURRENT_TIMESTAMP,
                             payment_method VARCHAR(50) DEFAULT 'UPI',
                             status VARCHAR(30) DEFAULT 'Completed',
-                            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-                            FOREIGN KEY (bill_id) REFERENCES bills(bill_id) ON DELETE CASCADE
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                            FOREIGN KEY (user_id)
+                                REFERENCES users(user_id)
+                                ON DELETE CASCADE,
+                            FOREIGN KEY (bill_id)
+                                REFERENCES bills(bill_id)
+                                ON DELETE CASCADE
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """)
-                conn.close()
-                logger.info("MySQL database & tables initialized successfully.")
+
             else:
                 cursor = conn.cursor()
+
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         user_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,8 +161,9 @@ class Database:
                         email TEXT NOT NULL UNIQUE,
                         password TEXT NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                    );
+                    )
                 """)
+
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS bills (
                         bill_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,19 +176,40 @@ class Database:
                         description TEXT,
                         status TEXT DEFAULT 'Pending',
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES users(user_id)
-                    );
+                        FOREIGN KEY (user_id)
+                            REFERENCES users(user_id)
+                    )
                 """)
-                
-                # Check for legacy title column in SQLite
+
                 cursor.execute("PRAGMA table_info(bills)")
-                cols = [row['name'] for row in cursor.fetchall()]
-                if 'title' in cols and 'bill_name' not in cols:
-                    cursor.execute("ALTER TABLE bills RENAME COLUMN title TO bill_name")
-                if 'frequency' not in cols:
-                    cursor.execute("ALTER TABLE bills ADD COLUMN frequency TEXT DEFAULT 'Monthly'")
-                if 'description' not in cols:
-                    cursor.execute("ALTER TABLE bills ADD COLUMN description TEXT")
+
+                bill_columns = {
+                    row["name"] for row in cursor.fetchall()
+                }
+
+                if (
+                    "title" in bill_columns
+                    and "bill_name" not in bill_columns
+                ):
+                    cursor.execute(
+                        "ALTER TABLE bills "
+                        "RENAME COLUMN title TO bill_name"
+                    )
+
+                    bill_columns.remove("title")
+                    bill_columns.add("bill_name")
+
+                if "frequency" not in bill_columns:
+                    cursor.execute("""
+                        ALTER TABLE bills
+                        ADD COLUMN frequency TEXT DEFAULT 'Monthly'
+                    """)
+
+                if "description" not in bill_columns:
+                    cursor.execute("""
+                        ALTER TABLE bills
+                        ADD COLUMN description TEXT
+                    """)
 
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS payments (
@@ -147,79 +217,195 @@ class Database:
                         user_id INTEGER NOT NULL,
                         bill_id INTEGER NOT NULL,
                         amount REAL NOT NULL,
-                        payment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        payment_date DATETIME
+                            DEFAULT CURRENT_TIMESTAMP,
                         payment_method TEXT DEFAULT 'UPI',
                         status TEXT DEFAULT 'Completed',
-                        FOREIGN KEY (user_id) REFERENCES users(user_id),
-                        FOREIGN KEY (bill_id) REFERENCES bills(bill_id)
-                    );
+                        FOREIGN KEY (user_id)
+                            REFERENCES users(user_id),
+                        FOREIGN KEY (bill_id)
+                            REFERENCES bills(bill_id)
+                    )
                 """)
+
                 conn.commit()
-                conn.close()
-                logger.info("SQLite database & tables initialized successfully.")
-        except Exception as e:
-            logger.error(f"Error initializing database: {e}")
+
+            logger.info(
+                "%s database and tables initialized successfully.",
+                db_type.upper()
+            )
+
+        except Exception:
+            conn.rollback()
+            logger.exception("Error initializing database")
+            raise
+
+        finally:
+            conn.close()
 
     def seed_initial_user_data(self, user_id):
-        """Seeds sample bills and payments for a user if they have zero bills."""
+        """Add example bills and payments if this user has no bills."""
         conn, db_type = self.get_connection()
+
         try:
-            if db_type == 'mysql':
+            if db_type == "mysql":
                 with conn.cursor() as cursor:
-                    cursor.execute("SELECT COUNT(*) as count FROM bills WHERE user_id = %s", (user_id,))
-                    count = cursor.fetchone()['count']
+                    cursor.execute(
+                        """
+                        SELECT COUNT(*) AS count
+                        FROM bills
+                        WHERE user_id = %s
+                        """,
+                        (user_id,)
+                    )
+                    count = cursor.fetchone()["count"]
+
             else:
                 cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) as count FROM bills WHERE user_id = ?", (user_id,))
-                count = cursor.fetchone()['count']
+
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM bills
+                    WHERE user_id = ?
+                    """,
+                    (user_id,)
+                )
+
+                count = cursor.fetchone()["count"]
 
             if count > 0:
-                conn.close()
                 return
 
             today = datetime.now().date()
+
             sample_bills = [
-                ("Electricity Bill (MSEB)", "Electricity", 2450.00, (today + timedelta(days=5)).strftime("%Y-%m-%d"), "Monthly", "Home electricity bill", "Pending"),
-                ("Jio Fiber Broadband", "Internet", 999.00, (today + timedelta(days=9)).strftime("%Y-%m-%d"), "Monthly", "100Mbps unlimited fiber internet", "Pending"),
-                ("Airtel Postpaid", "Mobile", 699.00, (today + timedelta(days=12)).strftime("%Y-%m-%d"), "Monthly", "Postpaid family mobile plan", "Pending"),
-                ("Netflix Premium Plan", "OTT", 649.00, (today - timedelta(days=2)).strftime("%Y-%m-%d"), "Monthly", "4K Ultra HD subscription", "Overdue"),
-                ("House Rent", "Rent", 18000.00, (today - timedelta(days=4)).strftime("%Y-%m-%d"), "Monthly", "Monthly apartment rent", "Overdue"),
-                ("HDFC Car Loan EMI", "EMI", 12500.00, (today - timedelta(days=15)).strftime("%Y-%m-%d"), "Monthly", "Automobile loan monthly installment", "Paid"),
-                ("Health Insurance (Star)", "Insurance", 4500.00, (today - timedelta(days=20)).strftime("%Y-%m-%d"), "Yearly", "Annual health protection coverage", "Paid")
+                (
+                    "Electricity Bill (MSEB)", "Electricity", 2450.00,
+                    (today + timedelta(days=5)).isoformat(),
+                    "Monthly", "Home electricity bill", "Pending"
+                ),
+                (
+                    "Jio Fiber Broadband", "Internet", 999.00,
+                    (today + timedelta(days=9)).isoformat(),
+                    "Monthly", "100Mbps unlimited fiber internet",
+                    "Pending"
+                ),
+                (
+                    "Airtel Postpaid", "Mobile", 699.00,
+                    (today + timedelta(days=12)).isoformat(),
+                    "Monthly", "Postpaid family mobile plan", "Pending"
+                ),
+                (
+                    "Netflix Premium Plan", "OTT", 649.00,
+                    (today - timedelta(days=2)).isoformat(),
+                    "Monthly", "4K Ultra HD subscription", "Overdue"
+                ),
+                (
+                    "House Rent", "Rent", 18000.00,
+                    (today - timedelta(days=4)).isoformat(),
+                    "Monthly", "Monthly apartment rent", "Overdue"
+                ),
+                (
+                    "HDFC Car Loan EMI", "EMI", 12500.00,
+                    (today - timedelta(days=15)).isoformat(),
+                    "Monthly", "Automobile loan monthly installment",
+                    "Paid"
+                ),
+                (
+                    "Health Insurance (Star)", "Insurance", 4500.00,
+                    (today - timedelta(days=20)).isoformat(),
+                    "Yearly", "Annual health protection coverage", "Paid"
+                )
             ]
 
-            if db_type == 'mysql':
-                with conn.cursor() as cursor:
-                    for b in sample_bills:
+            for bill in sample_bills:
+                if db_type == "mysql":
+                    with conn.cursor() as cursor:
                         cursor.execute(
-                            "INSERT INTO bills (user_id, bill_name, category, amount, due_date, frequency, description, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                            (user_id, b[0], b[1], b[2], b[3], b[4], b[5], b[6])
-                        )
-                        bill_id = cursor.lastrowid
-                        if b[6] == 'Paid':
-                            cursor.execute(
-                                "INSERT INTO payments (user_id, bill_id, amount, payment_method, status) VALUES (%s, %s, %s, %s, %s)",
-                                (user_id, bill_id, b[2], "UPI", "Completed")
+                            """
+                            INSERT INTO bills
+                            (
+                                user_id, bill_name, category, amount,
+                                due_date, frequency, description, status
                             )
-                conn.close()
-            else:
-                cursor = conn.cursor()
-                for b in sample_bills:
-                    cursor.execute(
-                        "INSERT INTO bills (user_id, bill_name, category, amount, due_date, frequency, description, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (user_id, b[0], b[1], b[2], b[3], b[4], b[5], b[6])
-                    )
-                    bill_id = cursor.lastrowid
-                    if b[6] == 'Paid':
-                        cursor.execute(
-                            "INSERT INTO payments (user_id, bill_id, amount, payment_method, status) VALUES (?, ?, ?, ?, ?)",
-                            (user_id, bill_id, b[2], "UPI", "Completed")
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                user_id, bill[0], bill[1], bill[2],
+                                bill[3], bill[4], bill[5], bill[6]
+                            )
                         )
-                conn.commit()
-                conn.close()
 
-            logger.info(f"Seeded initial sample bills for user_id={user_id}")
-        except Exception as e:
-            logger.error(f"Error seeding user data: {e}")
+                        bill_id = cursor.lastrowid
+
+                        if bill[6] == "Paid":
+                            cursor.execute(
+                                """
+                                INSERT INTO payments
+                                (
+                                    user_id, bill_id, amount,
+                                    payment_method, status
+                                )
+                                VALUES (%s, %s, %s, %s, %s)
+                                """,
+                                (
+                                    user_id, bill_id, bill[2],
+                                    "UPI", "Completed"
+                                )
+                            )
+
+                else:
+                    cursor = conn.cursor()
+
+                    cursor.execute(
+                        """
+                        INSERT INTO bills
+                        (
+                            user_id, bill_name, category, amount,
+                            due_date, frequency, description, status
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            user_id, bill[0], bill[1], bill[2],
+                            bill[3], bill[4], bill[5], bill[6]
+                        )
+                    )
+
+                    bill_id = cursor.lastrowid
+
+                    if bill[6] == "Paid":
+                        cursor.execute(
+                            """
+                            INSERT INTO payments
+                            (
+                                user_id, bill_id, amount,
+                                payment_method, status
+                            )
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (
+                                user_id, bill_id, bill[2],
+                                "UPI", "Completed"
+                            )
+                        )
+
+            if db_type == "sqlite":
+                conn.commit()
+
+            logger.info(
+                "Sample data created for user_id=%s",
+                user_id
+            )
+
+        except Exception:
+            conn.rollback()
+            logger.exception("Error seeding initial user data")
+            raise
+
+        finally:
+            conn.close()
+
 
 db = Database()

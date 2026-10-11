@@ -35,7 +35,7 @@ const SpendingCharts = ({ monthlyData = [], categoryData = [] }) => {
       }}>
         <div style={{ marginBottom: 20 }}>
           <h3 style={{ fontSize: 17, fontWeight: 700, color: '#0f172a' }}>Monthly Spending</h3>
-          <p style={{ fontSize: 13, color: '#64748b' }}>6-Month bill expenditure trend</p>
+          <p style={{ fontSize: 13, color: '#64748b' }}>12-Month bill expenditure trend</p>
         </div>
 
         <div style={{ width: '100%', height: 260 }}>

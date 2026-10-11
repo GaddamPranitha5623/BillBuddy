@@ -20,6 +20,7 @@ const Dashboard = () => {
     setError('');
     try {
       const response = await fetchDashboardDataApi();
+      console.log("MONTHLY DATA:", response.data.monthly_spending);
       setData(response.data);
     } catch (err) {
       console.error("Dashboard data fetch failed:", err);
